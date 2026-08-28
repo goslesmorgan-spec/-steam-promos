@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Liste chaque jour les jeux Steam en promotion à moins de 5€.
+Liste chaque jour les jeux Steam en promotion à moins de 5€ avec au moins 4/5 d'avis positifs.
 Génère un fichier Markdown (promos_du_jour.md) avec la liste triée par prix.
 """
 
@@ -14,6 +14,13 @@ PRIX_MAX_EUROS = 5.0
 MAX_PAGES = 25              # sécurité : jamais plus de 25 pages (2500 jeux) parcourues
 RESULTS_PER_PAGE = 100
 PAUSE_ENTRE_REQUETES = 1.0  # secondes, pour rester poli avec les serveurs Steam
+
+# Steam n'a pas de note "X/5" : on convertit à partir du % d'avis positifs.
+# 4/5 = 80 %. Modifie cette valeur si tu veux être plus ou moins strict.
+NOTE_MIN_POURCENT = 80
+# Nombre minimum d'avis pour que le pourcentage soit fiable (évite qu'un jeu
+# avec 2 avis positifs sur 2, donc 100 %, ne passe le filtre à tort).
+NB_AVIS_MIN = 10
 
 BASE_URL = "https://store.steampowered.com/search/results/"
 HEADERS = {
@@ -90,6 +97,55 @@ def parser_resultats(html: str) -> list:
     return jeux
 
 
+def interpreter_avis(resume: dict):
+    """Convertit un query_summary Steam en infos exploitables, ou None si pas assez d'avis."""
+    total = resume.get("total_reviews", 0)
+    positifs = resume.get("total_positive", 0)
+    if total == 0:
+        return None
+    return {
+        "pourcentage_positif": round(positifs / total * 100),
+        "nb_avis": total,
+        "libelle": resume.get("review_score_desc", ""),
+    }
+
+
+def recuperer_avis(appid: str):
+    """Récupère et interprète le résumé des avis Steam pour un jeu donné."""
+    url = f"https://store.steampowered.com/appreviews/{appid}"
+    params = {"json": 1, "language": "all", "purchase_type": "all", "num_per_page": 0}
+    try:
+        reponse = requests.get(url, params=params, headers=HEADERS, timeout=15)
+        reponse.raise_for_status()
+        data = reponse.json()
+        return interpreter_avis(data.get("query_summary", {}))
+    except Exception as exc:
+        print(f"  [!] Avis introuvables pour l'appid {appid} : {exc}")
+        return None
+
+
+def filtrer_par_avis(jeux: list) -> list:
+    """Ne garde que les jeux avec au moins NOTE_MIN_POURCENT % d'avis positifs."""
+    retenus = []
+    for jeu in jeux:
+        avis = recuperer_avis(jeu["appid"])
+        time.sleep(PAUSE_ENTRE_REQUETES)
+
+        if avis is None or avis["nb_avis"] < NB_AVIS_MIN:
+            print(f"  - {jeu['titre']} : pas assez d'avis, ignoré")
+            continue
+        if avis["pourcentage_positif"] < NOTE_MIN_POURCENT:
+            print(f"  - {jeu['titre']} : {avis['pourcentage_positif']}% seulement, ignoré")
+            continue
+
+        print(f"  - {jeu['titre']} : {avis['pourcentage_positif']}% ({avis['libelle']}), retenu")
+        jeu["pourcentage_positif"] = avis["pourcentage_positif"]
+        jeu["nb_avis"] = avis["nb_avis"]
+        jeu["libelle_avis"] = avis["libelle"]
+        retenus.append(jeu)
+    return retenus
+
+
 def recuperer_toutes_les_promos_pas_cheres() -> list:
     """Parcourt les pages de résultats et garde les jeux sous PRIX_MAX_EUROS."""
     trouves = []
@@ -125,19 +181,20 @@ def recuperer_toutes_les_promos_pas_cheres() -> list:
 def generer_markdown(jeux: list) -> str:
     maintenant = datetime.now().strftime("%d/%m/%Y à %H:%M")
     lignes = [
-        f"# Jeux Steam à moins de {PRIX_MAX_EUROS:.0f}€",
+        f"# Jeux Steam à moins de {PRIX_MAX_EUROS:.0f}€ (min. {NOTE_MIN_POURCENT}% d'avis positifs)",
         "",
         f"_Dernière mise à jour : {maintenant}_",
         "",
         f"**{len(jeux)} jeu(x) trouvé(s)**",
         "",
-        "| Jeu | Prix | Réduction | Lien |",
-        "|---|---|---|---|",
+        "| Jeu | Prix | Réduction | Avis | Lien |",
+        "|---|---|---|---|---|",
     ]
     for jeu in jeux:
         prix_fmt = f"{jeu['prix_euros']:.2f}".replace(".", ",") + " €"
+        avis_fmt = f"{jeu['pourcentage_positif']}% ({jeu['nb_avis']} avis)"
         lignes.append(
-            f"| {jeu['titre']} | {prix_fmt} | {jeu['reduction']} | [Voir sur Steam]({jeu['lien']}) |"
+            f"| {jeu['titre']} | {prix_fmt} | {jeu['reduction']} | {avis_fmt} | [Voir sur Steam]({jeu['lien']}) |"
         )
     return "\n".join(lignes) + "\n"
 
@@ -147,7 +204,11 @@ def main():
     jeux = recuperer_toutes_les_promos_pas_cheres()
     print(f"\n{len(jeux)} jeux trouvés à moins de {PRIX_MAX_EUROS:.0f}€.")
 
-    contenu = generer_markdown(jeux)
+    print(f"\nVérification des avis (seuil : {NOTE_MIN_POURCENT}% mini)...")
+    jeux_bien_notes = filtrer_par_avis(jeux)
+    print(f"\n{len(jeux_bien_notes)} jeux ont au moins {NOTE_MIN_POURCENT}% d'avis positifs.")
+
+    contenu = generer_markdown(jeux_bien_notes)
     with open("promos_du_jour.md", "w", encoding="utf-8") as f:
         f.write(contenu)
     print("Fichier promos_du_jour.md généré.")
