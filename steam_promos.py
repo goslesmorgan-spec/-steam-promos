@@ -17,7 +17,7 @@ PAUSE_ENTRE_REQUETES = 1.0  # secondes, pour rester poli avec les serveurs Steam
 
 # Steam n'a pas de note "X/5" : on convertit à partir du % d'avis positifs.
 # 4/5 = 80 %. Modifie cette valeur si tu veux être plus ou moins strict.
-NOTE_MIN_POURCENT = 80
+NOTE_MIN_POURCENT = 95
 # Nombre minimum d'avis pour que le pourcentage soit fiable (évite qu'un jeu
 # avec 2 avis positifs sur 2, donc 100 %, ne passe le filtre à tort).
 NB_AVIS_MIN = 1000
