@@ -20,7 +20,7 @@ PAUSE_ENTRE_REQUETES = 1.0  # secondes, pour rester poli avec les serveurs Steam
 NOTE_MIN_POURCENT = 80
 # Nombre minimum d'avis pour que le pourcentage soit fiable (évite qu'un jeu
 # avec 2 avis positifs sur 2, donc 100 %, ne passe le filtre à tort).
-NB_AVIS_MIN = 10
+NB_AVIS_MIN = 1000
 
 BASE_URL = "https://store.steampowered.com/search/results/"
 HEADERS = {
