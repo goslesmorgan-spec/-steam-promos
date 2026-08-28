@@ -1,1 +1,35 @@
+name: Promos Steam quotidiennes
 
+on:
+  schedule:
+    - cron: "0 8 * * *"   # tous les jours à 8h00 UTC (~10h en France l'été, 9h l'hiver)
+  workflow_dispatch:        # permet de le lancer manuellement depuis l'onglet "Actions"
+
+permissions:
+  contents: write            # nécessaire pour que le workflow puisse pousser le fichier mis à jour
+
+jobs:
+  maj-promos:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Installer Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installer les dépendances
+        run: pip install requests beautifulsoup4
+
+      - name: Lancer le script
+        run: python steam_promos.py
+
+      - name: Publier le fichier mis à jour
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add promos_du_jour.md
+          git diff --quiet --cached || git commit -m "Mise à jour des promos du $(date +'%d/%m/%Y')"
+          git push
